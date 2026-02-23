@@ -3,10 +3,10 @@
 Codespaces-friendly app that orchestrates sport event deep research and outputs JSON + CSV grouped by Joinable and Watchable.
 
 ## Features
-- Agent 1 orchestration flow: prompt builder -> schema validation -> deep/web research model.
+- Multi-agent orchestration flow: prompt builder -> deep/web research model -> validation agent (gpt-5-mini).
 - Timeframe and sport selectors (top 5 sports dropdown).
 - Agent count splitter to divide timeframe into chunks per researcher.
-- Streaming/background flags sent as `true` for provider calls.
+- Streaming/background flags sent for provider calls where supported.
 - Existing CSV memory read per sport (`data/<sport>.csv`) and dedupe guard (`DO NOT REPEAT`).
 - UI cards with price, source URL, and event details.
 - CSV output with headers: `Event Title,Date,Time,City,Venue/Location,Cost,Direct URL`.
@@ -29,3 +29,4 @@ If no API keys are present, the app still runs and returns empty validated outpu
 - The server and research flow now emit structured JSON logs to stdout/stderr.
 - Validation errors are returned from `/api/research` with actionable messages.
 - Per-agent provider/parsing failures are exposed in `meta.errors` in API responses.
+- Per-agent flow telemetry is returned in `meta.flow` so validation outcomes can be showcased in the UI.

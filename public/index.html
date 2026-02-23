@@ -23,6 +23,9 @@
           <label>Research Mode
             <select name="researchModel" id="model-select"></select>
           </label>
+          <label>Validation Agent
+            <select name="validationModel" id="validation-model-select"></select>
+          </label>
         </div>
         <div class="checks">
           <label><input type="checkbox" name="includeJoinable" checked /> Joinable</label>
@@ -32,6 +35,9 @@
       </form>
       <section>
         <h2>Results</h2>
+        <h3>Agent Flow</h3>
+        <pre id="flow-output"></pre>
+        <h3>CSV Output</h3>
         <pre id="csv-output"></pre>
         <div id="cards"></div>
       </section>

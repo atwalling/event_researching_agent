@@ -3,6 +3,8 @@ const path = require('path');
 
 const CSV_HEADER = 'Event Title,Date,Time,City,Venue/Location,Cost,Direct URL';
 const TOP_SPORTS = ['Running', 'Football', 'Basketball', 'Soccer', 'Baseball'];
+const DEFAULT_RESEARCH_MODEL = 'o4-mini-deep-research-2025-06-26';
+const DEFAULT_VALIDATION_MODEL = 'gpt-5-mini';
 
 function log(level, message, context = {}) {
   const payload = {
@@ -136,6 +138,47 @@ async function callOpenAI(model, systemPrompt, userPrompt) {
   return '';
 }
 
+function normalizeBucket(events) {
+  if (!Array.isArray(events)) return [];
+  return events.map(normalize).filter(Boolean);
+}
+
+function parseRawResearchOutput(raw) {
+  const parsed = JSON.parse(raw);
+  return {
+    joinable: normalizeBucket(parsed.joinable),
+    watchable: normalizeBucket(parsed.watchable)
+  };
+}
+
+async function runValidationAgent({ raw, validationModel, chunk, sport }) {
+  if (!process.env.OPENAI_API_KEY) {
+    return parseRawResearchOutput(raw);
+  }
+
+  const systemPrompt = [
+    'You are a validation agent for sports event research output.',
+    'Return strict JSON only with shape {"joinable": [], "watchable": []}.',
+    'Drop entries that are not real events or have missing required fields.',
+    'Required fields for every event: title,date,time,city,venue,cost,url.',
+    'Never include markdown fences or commentary.'
+  ].join(' ');
+
+  const userPrompt = [
+    `Sport: ${sport}`,
+    `Chunk agent: ${chunk.agentId} (${chunk.from} -> ${chunk.to})`,
+    'Validate and sanitize the following JSON payload:',
+    raw
+  ].join('\n');
+
+  const validatedRaw = await callOpenAI(validationModel, systemPrompt, userPrompt);
+  if (!validatedRaw) {
+    throw new Error('Validation agent returned empty output');
+  }
+
+  return parseRawResearchOutput(validatedRaw);
+}
+
 async function callGemini(agent, userPrompt) {
   const apiKey = process.env.GOOGLE_API_KEY;
   if (!apiKey) {
@@ -211,7 +254,8 @@ async function runResearch(params) {
     agentCount: Number(params.agentCount || 1),
     includeJoinable: Boolean(params.includeJoinable),
     includeWatchable: Boolean(params.includeWatchable),
-    researchModel: params.researchModel || 'o4-mini-deep-research-2025-06-26'
+    researchModel: params.researchModel || DEFAULT_RESEARCH_MODEL,
+    validationModel: params.validationModel || DEFAULT_VALIDATION_MODEL
   };
 
   if (!validated.city) throw new Error('city is required');
@@ -239,6 +283,7 @@ async function runResearch(params) {
 
   const combined = { joinable: [], watchable: [] };
   const errors = [];
+  const flow = [];
 
   for (const chunk of chunks) {
     const prompt = buildChunkPrompt(validated, chunk, existing);
@@ -259,17 +304,52 @@ async function runResearch(params) {
 
     if (!raw) {
       log('warn', 'Chunk produced empty output', { agentId: chunk.agentId });
+      flow.push({
+        agentId: chunk.agentId,
+        chunk,
+        researchModel: validated.researchModel,
+        validationModel: validated.validationModel,
+        status: 'empty',
+        joinableCount: 0,
+        watchableCount: 0,
+        notes: 'Research model returned empty output'
+      });
       continue;
     }
 
     try {
-      const parsed = JSON.parse(raw);
-      combined.joinable.push(...(parsed.joinable || []));
-      combined.watchable.push(...(parsed.watchable || []));
+      const sanitized = await runValidationAgent({
+        raw,
+        validationModel: validated.validationModel,
+        chunk,
+        sport: validated.sport
+      });
+      combined.joinable.push(...sanitized.joinable);
+      combined.watchable.push(...sanitized.watchable);
+      flow.push({
+        agentId: chunk.agentId,
+        chunk,
+        researchModel: validated.researchModel,
+        validationModel: validated.validationModel,
+        status: 'validated',
+        joinableCount: sanitized.joinable.length,
+        watchableCount: sanitized.watchable.length,
+        notes: 'Validation agent accepted/sanitized output'
+      });
     } catch (error) {
-      const msg = `Chunk ${chunk.agentId} returned invalid JSON: ${error.message}`;
+      const msg = `Chunk ${chunk.agentId} failed validation JSON parsing: ${error.message}`;
       log('error', msg, { preview: raw.slice(0, 500) });
       errors.push(msg);
+      flow.push({
+        agentId: chunk.agentId,
+        chunk,
+        researchModel: validated.researchModel,
+        validationModel: validated.validationModel,
+        status: 'validation_failed',
+        joinableCount: 0,
+        watchableCount: 0,
+        notes: msg
+      });
     }
   }
 
@@ -292,6 +372,7 @@ async function runResearch(params) {
       stream: false,
       background: false,
       chunks,
+      flow,
       existingCount: existing.length,
       errors
     },
@@ -306,5 +387,7 @@ module.exports = {
   CSV_HEADER,
   TOP_SPORTS,
   runResearch,
-  splitIntoChunks
+  splitIntoChunks,
+  DEFAULT_RESEARCH_MODEL,
+  DEFAULT_VALIDATION_MODEL
 };

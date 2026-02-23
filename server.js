@@ -2,7 +2,7 @@ const http = require('http');
 const fs = require('fs/promises');
 const fsSync = require('fs');
 const path = require('path');
-const { runResearch, TOP_SPORTS } = require('./src/research');
+const { runResearch, TOP_SPORTS, DEFAULT_RESEARCH_MODEL, DEFAULT_VALIDATION_MODEL } = require('./src/research');
 
 const PORT = process.env.PORT || 3000;
 
@@ -49,7 +49,13 @@ const server = http.createServer(async (req, res) => {
   log('info', 'incoming request', { method: req.method, url: req.url });
 
   if (req.method === 'GET' && req.url === '/api/config') {
-    sendJson(res, 200, { topSports: TOP_SPORTS, providers: ['web-search-3-fast', 'deep-research-pro-preview-12-2025', 'o4-mini-deep-research-2025-06-26'] });
+    sendJson(res, 200, {
+      topSports: TOP_SPORTS,
+      providers: ['web-search-3-fast', 'deep-research-pro-preview-12-2025', DEFAULT_RESEARCH_MODEL],
+      defaultResearchModel: DEFAULT_RESEARCH_MODEL,
+      validationModels: [DEFAULT_VALIDATION_MODEL],
+      defaultValidationModel: DEFAULT_VALIDATION_MODEL
+    });
     return;
   }
 
@@ -68,7 +74,8 @@ const server = http.createServer(async (req, res) => {
           agentCount: Number(params.agentCount),
           includeJoinable: Boolean(params.includeJoinable),
           includeWatchable: Boolean(params.includeWatchable),
-          researchModel: params.researchModel || 'o4-mini-deep-research-2025-06-26'
+          researchModel: params.researchModel || DEFAULT_RESEARCH_MODEL,
+          validationModel: params.validationModel || DEFAULT_VALIDATION_MODEL
         });
         sendJson(res, 200, results);
       } catch (error) {
