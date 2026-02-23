@@ -1,7 +1,7 @@
 const http = require('http');
 const fs = require('fs/promises');
+const fsSync = require('fs');
 const path = require('path');
-require('dotenv').config();
 const { runResearch, TOP_SPORTS } = require('./src/research');
 
 const PORT = process.env.PORT || 3000;
@@ -24,6 +24,14 @@ function log(level, message, context = {}) {
 function sendJson(res, status, payload) {
   res.writeHead(status, { 'Content-Type': 'application/json' });
   res.end(JSON.stringify(payload));
+}
+
+const dotenvPackage = path.join(__dirname, 'node_modules', 'dotenv', 'package.json');
+if (fsSync.existsSync(dotenvPackage)) {
+  // eslint-disable-next-line global-require
+  require('dotenv').config();
+} else {
+  log('warn', 'dotenv is not installed; using environment variables provided by the shell');
 }
 
 async function serveStatic(res, filePath, contentType) {
