@@ -1,9 +1,25 @@
 const http = require('http');
 const fs = require('fs/promises');
 const path = require('path');
+require('dotenv').config();
 const { runResearch, TOP_SPORTS } = require('./src/research');
 
 const PORT = process.env.PORT || 3000;
+
+function log(level, message, context = {}) {
+  const payload = {
+    ts: new Date().toISOString(),
+    level,
+    message,
+    ...context
+  };
+  const line = JSON.stringify(payload);
+  if (level === 'error') {
+    console.error(line);
+    return;
+  }
+  console.log(line);
+}
 
 function sendJson(res, status, payload) {
   res.writeHead(status, { 'Content-Type': 'application/json' });
@@ -22,6 +38,8 @@ async function serveStatic(res, filePath, contentType) {
 }
 
 const server = http.createServer(async (req, res) => {
+  log('info', 'incoming request', { method: req.method, url: req.url });
+
   if (req.method === 'GET' && req.url === '/api/config') {
     sendJson(res, 200, { topSports: TOP_SPORTS, providers: ['web-search-3-fast', 'deep-research-pro-preview-12-2025', 'o4-mini-deep-research-2025-06-26'] });
     return;
@@ -32,7 +50,7 @@ const server = http.createServer(async (req, res) => {
     req.on('data', (chunk) => { body += chunk; });
     req.on('end', async () => {
       try {
-        const params = JSON.parse(body);
+        const params = JSON.parse(body || '{}');
         const results = await runResearch({
           city: params.city,
           centerpoint: params.centerpoint,
@@ -46,6 +64,7 @@ const server = http.createServer(async (req, res) => {
         });
         sendJson(res, 200, results);
       } catch (error) {
+        log('error', 'research request failed', { error: error.message });
         sendJson(res, 400, { error: error.message });
       }
     });

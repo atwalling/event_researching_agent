@@ -19,4 +19,13 @@ Codespaces-friendly app that orchestrates sport event deep research and outputs 
 - `OPENAI_API_KEY`
 - `GOOGLE_API_KEY`
 
+Use `.env.example` as a template:
+1. `cp .env.example .env`
+2. Fill in at least one API key.
+
 If no API keys are present, the app still runs and returns empty validated output.
+
+## Troubleshooting
+- The server and research flow now emit structured JSON logs to stdout/stderr.
+- Validation errors are returned from `/api/research` with actionable messages.
+- Per-agent provider/parsing failures are exposed in `meta.errors` in API responses.
