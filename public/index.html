@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Sports Event Deep Research</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <main>
+      <h1>Sports Event Deep Research</h1>
+      <p>Streaming + background research orchestration with CSV memory dedupe.</p>
+      <form id="research-form">
+        <div class="grid">
+          <label>City <input name="city" value="Nashville" required /></label>
+          <label>Centerpoint <input name="centerpoint" value="36.1627,-86.7816" required /></label>
+          <label>Radius (miles) <input name="radiusMiles" type="number" value="45" min="1" required /></label>
+          <label>Sport
+            <select name="sport" id="sport-select"></select>
+          </label>
+          <label>Time Frame (months) <input name="timeframeMonths" type="number" value="6" min="1" max="12" required /></label>
+          <label>Research Agents <input name="agentCount" type="number" value="6" min="1" max="24" required /></label>
+          <label>Research Mode
+            <select name="researchModel" id="model-select"></select>
+          </label>
+        </div>
+        <div class="checks">
+          <label><input type="checkbox" name="includeJoinable" checked /> Joinable</label>
+          <label><input type="checkbox" name="includeWatchable" checked /> Watchable</label>
+        </div>
+        <button type="submit">Run Research</button>
+      </form>
+      <section>
+        <h2>Results</h2>
+        <pre id="csv-output"></pre>
+        <div id="cards"></div>
+      </section>
+    </main>
+    <script src="/app.js"></script>
+  </body>
+</html>

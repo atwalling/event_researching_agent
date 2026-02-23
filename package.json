@@ -1,0 +1,14 @@
+{
+  "name": "event-researching-agent",
+  "version": "1.0.0",
+  "description": "Codespaces-friendly local sports event research orchestrator",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js",
+    "check": "node --check server.js && node --check src/research.js"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
