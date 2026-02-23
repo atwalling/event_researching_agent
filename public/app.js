@@ -17,7 +17,16 @@ async function loadConfig() {
     opt.textContent = model;
     modelSelect.appendChild(opt);
   });
-  modelSelect.value = 'o4-mini-deep-research-2025-06-26';
+  modelSelect.value = data.defaultResearchModel;
+
+  const validationSelect = document.getElementById('validation-model-select');
+  data.validationModels.forEach((model) => {
+    const opt = document.createElement('option');
+    opt.value = model;
+    opt.textContent = model;
+    validationSelect.appendChild(opt);
+  });
+  validationSelect.value = data.defaultValidationModel;
 }
 
 function card(event, bucket) {
@@ -38,6 +47,7 @@ document.getElementById('research-form').addEventListener('submit', async (e) =>
   });
 
   const data = await res.json();
+  document.getElementById('flow-output').textContent = JSON.stringify(data.meta?.flow || [], null, 2);
   document.getElementById('csv-output').textContent = data.csv || data.error;
 
   const cards = [];
