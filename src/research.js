@@ -94,6 +94,24 @@ function buildChunkPrompt(params, chunk, existingRows) {
   ].join('\n');
 }
 
+function buildOpenAIRequestBody(model, systemPrompt, userPrompt) {
+  const body = {
+    model,
+    background: false,
+    stream: false,
+    input: [
+      { role: 'system', content: systemPrompt },
+      { role: 'user', content: userPrompt }
+    ]
+  };
+
+  if (model.includes('deep-research')) {
+    body.tools = [{ type: 'web_search_preview' }];
+  }
+
+  return body;
+}
+
 async function callOpenAI(model, systemPrompt, userPrompt) {
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) {
@@ -107,15 +125,7 @@ async function callOpenAI(model, systemPrompt, userPrompt) {
       'Content-Type': 'application/json',
       Authorization: `Bearer ${apiKey}`
     },
-    body: JSON.stringify({
-      model,
-      background: false,
-      stream: false,
-      input: [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: userPrompt }
-      ]
-    })
+    body: JSON.stringify(buildOpenAIRequestBody(model, systemPrompt, userPrompt))
   });
 
   if (!res.ok) {
