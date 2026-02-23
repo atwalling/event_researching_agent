@@ -4,6 +4,21 @@ const path = require('path');
 const CSV_HEADER = 'Event Title,Date,Time,City,Venue/Location,Cost,Direct URL';
 const TOP_SPORTS = ['Running', 'Football', 'Basketball', 'Soccer', 'Baseball'];
 
+function log(level, message, context = {}) {
+  const payload = {
+    ts: new Date().toISOString(),
+    level,
+    message,
+    ...context
+  };
+  const line = JSON.stringify(payload);
+  if (level === 'error') {
+    console.error(line);
+    return;
+  }
+  console.log(line);
+}
+
 function toISODate(date) {
   return new Date(date.getTime() - date.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
 }
@@ -79,7 +94,10 @@ function buildChunkPrompt(params, chunk, existingRows) {
 
 async function callOpenAI(model, systemPrompt, userPrompt) {
   const apiKey = process.env.OPENAI_API_KEY;
-  if (!apiKey) return null;
+  if (!apiKey) {
+    log('warn', 'OPENAI_API_KEY is not configured; OpenAI call skipped');
+    return null;
+  }
 
   const res = await fetch('https://api.openai.com/v1/responses', {
     method: 'POST',
@@ -89,8 +107,8 @@ async function callOpenAI(model, systemPrompt, userPrompt) {
     },
     body: JSON.stringify({
       model,
-      background: true,
-      stream: true,
+      background: false,
+      stream: false,
       input: [
         { role: 'system', content: systemPrompt },
         { role: 'user', content: userPrompt }
@@ -98,14 +116,32 @@ async function callOpenAI(model, systemPrompt, userPrompt) {
     })
   });
 
-  if (!res.ok) throw new Error(`OpenAI request failed: ${res.status}`);
+  if (!res.ok) {
+    const details = await res.text();
+    throw new Error(`OpenAI request failed: ${res.status} ${details}`);
+  }
   const data = await res.json();
-  return data.output_text || '';
+  if (typeof data.output_text === 'string' && data.output_text.trim()) {
+    return data.output_text;
+  }
+  if (Array.isArray(data.output)) {
+    const text = data.output
+      .flatMap((item) => item.content || [])
+      .filter((content) => content.type === 'output_text')
+      .map((content) => content.text || '')
+      .join('\n')
+      .trim();
+    return text;
+  }
+  return '';
 }
 
 async function callGemini(agent, userPrompt) {
   const apiKey = process.env.GOOGLE_API_KEY;
-  if (!apiKey) return null;
+  if (!apiKey) {
+    log('warn', 'GOOGLE_API_KEY is not configured; Gemini call skipped');
+    return null;
+  }
 
   const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/interactions?key=${apiKey}`, {
     method: 'POST',
@@ -117,7 +153,10 @@ async function callGemini(agent, userPrompt) {
     })
   });
 
-  if (!res.ok) throw new Error(`Google request failed: ${res.status}`);
+  if (!res.ok) {
+    const details = await res.text();
+    throw new Error(`Google request failed: ${res.status} ${details}`);
+  }
   const data = await res.json();
   return data?.outputs?.at(-1)?.text || '';
 }
@@ -163,34 +202,74 @@ function toCsv(joinable, watchable) {
 }
 
 async function runResearch(params) {
+  const validated = {
+    city: String(params.city || '').trim(),
+    centerpoint: String(params.centerpoint || '').trim(),
+    radiusMiles: Number(params.radiusMiles),
+    sport: String(params.sport || '').trim(),
+    timeframeMonths: Number(params.timeframeMonths || 1),
+    agentCount: Number(params.agentCount || 1),
+    includeJoinable: Boolean(params.includeJoinable),
+    includeWatchable: Boolean(params.includeWatchable),
+    researchModel: params.researchModel || 'o4-mini-deep-research-2025-06-26'
+  };
+
+  if (!validated.city) throw new Error('city is required');
+  if (!validated.centerpoint) throw new Error('centerpoint is required');
+  if (!validated.sport) throw new Error('sport is required');
+  if (!Number.isFinite(validated.radiusMiles) || validated.radiusMiles <= 0) throw new Error('radiusMiles must be > 0');
+  if (!Number.isInteger(validated.timeframeMonths) || validated.timeframeMonths < 1) throw new Error('timeframeMonths must be an integer >= 1');
+  if (!Number.isInteger(validated.agentCount) || validated.agentCount < 1) throw new Error('agentCount must be an integer >= 1');
+  if (!validated.includeJoinable && !validated.includeWatchable) throw new Error('Select at least one of Joinable or Watchable');
+
+  log('info', 'Starting research run', {
+    sport: validated.sport,
+    model: validated.researchModel,
+    agentCount: validated.agentCount,
+    timeframeMonths: validated.timeframeMonths
+  });
+
   const now = new Date();
   const end = new Date(now);
-  end.setMonth(end.getMonth() + Number(params.timeframeMonths || 1));
+  end.setMonth(end.getMonth() + validated.timeframeMonths);
 
-  const existing = await loadExistingEvents(params.sport);
-  const chunks = splitIntoChunks(now, end, Number(params.agentCount || 1));
-  const systemPrompt = buildSystemPrompt(params);
+  const existing = await loadExistingEvents(validated.sport);
+  const chunks = splitIntoChunks(now, end, validated.agentCount);
+  const systemPrompt = buildSystemPrompt(validated);
 
   const combined = { joinable: [], watchable: [] };
+  const errors = [];
 
   for (const chunk of chunks) {
-    const prompt = buildChunkPrompt(params, chunk, existing);
+    const prompt = buildChunkPrompt(validated, chunk, existing);
     let raw = '';
 
-    if (params.researchModel === 'deep-research-pro-preview-12-2025') {
-      raw = await callGemini(params.researchModel, prompt);
-    } else {
-      raw = await callOpenAI(params.researchModel, systemPrompt, prompt);
+    try {
+      if (validated.researchModel === 'deep-research-pro-preview-12-2025') {
+        raw = await callGemini(validated.researchModel, prompt);
+      } else {
+        raw = await callOpenAI(validated.researchModel, systemPrompt, prompt);
+      }
+    } catch (error) {
+      const msg = `Chunk ${chunk.agentId} provider request failed: ${error.message}`;
+      log('error', msg);
+      errors.push(msg);
+      continue;
     }
 
-    if (!raw) continue;
+    if (!raw) {
+      log('warn', 'Chunk produced empty output', { agentId: chunk.agentId });
+      continue;
+    }
 
     try {
       const parsed = JSON.parse(raw);
       combined.joinable.push(...(parsed.joinable || []));
       combined.watchable.push(...(parsed.watchable || []));
-    } catch {
-      // Ignore unparseable chunks; validation layer can retry.
+    } catch (error) {
+      const msg = `Chunk ${chunk.agentId} returned invalid JSON: ${error.message}`;
+      log('error', msg, { preview: raw.slice(0, 500) });
+      errors.push(msg);
     }
   }
 
@@ -198,14 +277,23 @@ async function runResearch(params) {
   const watchable = uniqueByTitleDate(combined.watchable.map(normalize).filter(Boolean), existing);
 
   const csv = toCsv(joinable, watchable);
-  await fs.writeFile(path.join(process.cwd(), 'data', `${params.sport.toLowerCase()}.csv`), csv, 'utf8');
+  const dataDir = path.join(process.cwd(), 'data');
+  await fs.mkdir(dataDir, { recursive: true });
+  await fs.writeFile(path.join(dataDir, `${validated.sport.toLowerCase()}.csv`), csv, 'utf8');
+
+  log('info', 'Research run complete', {
+    joinableCount: joinable.length,
+    watchableCount: watchable.length,
+    errorCount: errors.length
+  });
 
   return {
     meta: {
-      stream: true,
-      background: true,
+      stream: false,
+      background: false,
       chunks,
-      existingCount: existing.length
+      existingCount: existing.length,
+      errors
     },
     joinable,
     watchable,
