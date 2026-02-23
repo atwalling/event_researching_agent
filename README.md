@@ -26,6 +26,7 @@ Use `.env.example` as a template:
 If no API keys are present, the app still runs and returns empty validated output.
 
 ## Troubleshooting
+- `.env` is loaded directly by the server at startup, so keys are picked up even if `dotenv` is unavailable in the runtime.
 - The server and research flow now emit structured JSON logs to stdout/stderr.
 - Validation errors are returned from `/api/research` with actionable messages.
 - Per-agent provider/parsing failures are exposed in `meta.errors` in API responses.
